@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { C, LOGO_PATH, loadHistory, saveHistory, loadPrefs, savePrefs } from '../shared';
 import MessageActions from '../utils/MessageActions';
+import useSarvamSTT from '../hooks/useSarvamSTT';
 
 /* ─── MARKDOWN COMPONENTS (react-markdown + remark-gfm) ─────── */
 const MD_COMPONENTS = {
@@ -692,6 +693,8 @@ export default function ChatPage({ onLogout, onNavigate }) {
   const [sidebarOpen, setSidebarOpen]   = useState(false);
   const [serverOnline, setServerOnline] = useState(false);
   const [showSummary, setShowSummary]   = useState(false);
+  const stt = useSarvamSTT();
+  const [sttReview, setSttReview]       = useState(false);
   const bottomRef   = useRef(null);
   const textareaRef = useRef(null);
   const nextId      = useRef(messages.length);
@@ -734,9 +737,21 @@ export default function ChatPage({ onLogout, onNavigate }) {
     el.style.height = Math.min(el.scrollHeight, 140) + 'px';
   }, [input]);
 
-  const send = useCallback(async () => {
-    if (!input.trim() || isLoading) return;
-    const question = input.trim();
+  useEffect(() => {
+    if (stt.finalText?.trim()) setSttReview(true);
+  }, [stt.finalText]);
+
+  // Redo: discard the transcript and start listening again
+  const sttRedo = useCallback(() => {
+    stt.reset();
+    setSttReview(false);
+    setInput('');
+    stt.startRecording();
+  }, [stt]);
+
+  const send = useCallback(async (override) => {
+    const question = (override ?? input).trim();
+    if (!question || isLoading) return;
     const history  = messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .slice(-10)
@@ -932,6 +947,7 @@ export default function ChatPage({ onLogout, onNavigate }) {
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.textSec; }}>
             <span>Clear History</span>
           </button>
+          {/* Cadavier page disabled for now - remove comment markers to re-enable
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '8px' }}>
             <div style={{ fontSize: '11px', color: C.textMuted, letterSpacing: '0.1em', fontFamily: 'Inter, sans-serif', marginBottom: '10px' }}>PAGES</div>
             <button onClick={() => { setSidebarOpen(false); onNavigate && onNavigate('cadavier'); }}
@@ -942,6 +958,7 @@ export default function ChatPage({ onLogout, onNavigate }) {
               <span>Cadavier</span>
             </button>
           </div>
+          */}
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '0' }}>
             <div style={{ fontSize: '11px', color: C.textMuted, letterSpacing: '0.1em', fontFamily: 'Inter, sans-serif', marginBottom: '10px' }}>THINKING MODE</div>
             <ThinkingToggle value={thinkingMode} onChange={setThinkingMode} sidebar />
@@ -1009,13 +1026,55 @@ export default function ChatPage({ onLogout, onNavigate }) {
 
         {/* INPUT */}
         <div style={{ padding: '16px 20px', background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          {stt.isRecording && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '8px 14px', background: `${C.error}14`, border: `1px solid ${C.error}55`, borderRadius: '10px', animation: 'fadeUp 0.2s ease forwards' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: C.error, flexShrink: 0, animation: 'pulse 1.2s ease infinite' }} />
+              <span style={{ fontSize: '13px', color: stt.liveText ? C.textPrim : C.textSec, fontFamily: 'DM Sans, sans-serif', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {stt.liveText || 'Listening… speak now, then click the mic again to stop'}
+              </span>
+            </div>
+          )}
+          {sttReview && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '8px 10px 8px 14px', background: C.surfaceHov, border: `1px solid ${C.border}`, borderRadius: '10px', animation: 'fadeUp 0.2s ease forwards' }}>
+              <span style={{ fontSize: '13px', color: C.textPrim, fontFamily: 'DM Sans, sans-serif', flex: 1, minWidth: 0, lineHeight: 1.45 }}>
+                {stt.finalText}
+              </span>
+              <button title="Discard" onClick={() => { stt.reset?.(); setSttReview(false); setInput(''); }}
+                style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: 'transparent', border: `1px solid ${C.border}`, cursor: 'pointer', color: C.textSec, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.error; e.currentTarget.style.color = C.error; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSec; }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+              <button title="Edit" onClick={() => { setInput(stt.finalText || ''); setSttReview(false); setTimeout(() => textareaRef.current?.focus(), 20); }}
+                style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: 'transparent', border: `1px solid ${C.border}`, cursor: 'pointer', color: C.textSec, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentGlow; e.currentTarget.style.color = C.accentGlow; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSec; }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              </button>
+              <button title="Redo — record again" onClick={sttRedo}
+                style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: 'transparent', border: `1px solid ${C.border}`, cursor: 'pointer', color: C.textSec, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentGlow; e.currentTarget.style.color = C.accentGlow; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textSec; }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+              </button>
+              <button title="Send" onClick={() => { setSttReview(false); send(stt.finalText); }}
+                style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: `linear-gradient(135deg, ${C.accent}, ${C.accentGlow})`, border: 'none', cursor: 'pointer', color: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', background: C.bg, border: `1px solid ${thinkingMode ? C.thinking + '77' : C.border}`, borderRadius: '14px', padding: '10px 10px 10px 16px', transition: 'border-color 0.2s' }}>
             <textarea ref={textareaRef} value={input}
               onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
               placeholder={thinkingMode ? 'Ask a complex anatomy question…' : 'Ask about anatomy…'}
               disabled={isLoading} rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.textPrim, fontSize: '14.5px', lineHeight: '1.5', resize: 'none', fontFamily: 'DM Sans, sans-serif', padding: '2px 0', maxHeight: '140px', overflowY: 'auto' }} />
-            <button onClick={send} disabled={isLoading || !input.trim()}
+            <button onClick={() => (stt.isRecording ? stt.stopRecording() : stt.startRecording())}
+              title={stt.isRecording ? 'Stop recording' : 'Voice input'}
+              style={{ width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0, background: stt.isRecording ? `${C.error}22` : C.surfaceHov, border: stt.isRecording ? `1px solid ${C.error}` : `1px solid ${C.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', animation: stt.isRecording ? 'pulse 1.2s ease infinite' : 'none' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={stt.isRecording ? C.error : C.textSec} strokeWidth="2.2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            </button>
+            <button onClick={() => send()} disabled={isLoading || !input.trim()}
               style={{ width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0, background: (isLoading || !input.trim()) ? C.surfaceHov : `linear-gradient(135deg, ${C.accent}, ${C.accentGlow})`, border: 'none', cursor: (isLoading || !input.trim()) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
               {isLoading
                 ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" style={{ animation: 'spin 1s linear infinite' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>

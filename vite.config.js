@@ -9,6 +9,8 @@ export default defineConfig({
       '/summarize':'http://localhost:8000',
       '/health':   'http://localhost:8000',
       '/figures':  'http://localhost:8000',
+      '/tts':      'http://localhost:8000',
+      '/stt-key':  'http://localhost:8000',
     }
   }
 })
